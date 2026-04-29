@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CNA Endorsement Generator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0b151f; }
+    input, textarea {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 5px;
+      padding: 9px 11px;
+      color: #dce8f0;
+      font-size: 13px;
+      font-family: 'Courier New', monospace;
+      outline: none;
+    }
+    input:focus, textarea:focus { border-color: rgba(200,16,46,0.4); }
+    a { text-decoration: none; }
+
+    /* Toggle / Checkbox */
+    .toggle-wrap { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+    .toggle-track {
+      width: 36px; height: 20px; border-radius: 10px;
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+      position: relative; transition: background 0.2s;
+      flex-shrink: 0; cursor: pointer;
+    }
+    .toggle-track.on { background: rgba(200,16,46,0.7); border-color: rgba(200,16,46,0.5); }
+    .toggle-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #fff; position: absolute; top: 2px; left: 2px;
+      transition: left 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+    .toggle-track.on .toggle-thumb { left: 18px; }
+
+    /* Rich text editor toolbar */
+    .rte-toolbar {
+      display: flex; flex-wrap: wrap; gap: 3px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-bottom: none;
+      border-radius: 5px 5px 0 0;
+      padding: 6px 8px;
+    }
+    .rte-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      color: #8aacbe;
+      font-size: 12px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-family: sans-serif;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+      min-width: 28px;
+      text-align: center;
+    }
+    .rte-btn:hover { background: rgba(200,16,46,0.2); color: #e08090; border-color: rgba(200,16,46,0.35); }
+    .rte-btn.active { background: rgba(200,16,46,0.3); color: #e08090; border-color: rgba(200,16,46,0.5); }
+    .rte-sep { width: 1px; background: rgba(255,255,255,0.08); margin: 2px 3px; align-self: stretch; }
+    .rte-select {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      color: #8aacbe;
+      font-size: 11px;
+      padding: 3px 6px;
+      cursor: pointer;
+      font-family: sans-serif;
+      outline: none;
+    }
+    .rte-select:focus { border-color: rgba(200,16,46,0.4); }
+    .rte-editor {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 0 0 5px 5px;
+      color: #dce8f0;
+      font-size: 13px;
+      font-family: 'Georgia', serif;
+      padding: 12px 14px;
+      min-height: 180px;
+      outline: none;
+      line-height: 1.7;
+    }
+    .rte-editor:focus { border-color: rgba(200,16,46,0.4); }
+    .rte-editor ul { padding-left: 22px; }
+    .rte-editor ol { padding-left: 22px; }
+    .rte-editor li { margin-bottom: 3px; }
+    .rte-editor blockquote { border-left: 3px solid rgba(200,16,46,0.5); padding-left: 12px; color: #8aacbe; margin: 6px 0; }
+
+    /* Segment control for policy/bond */
+    .seg-ctrl { display: flex; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); width: fit-content; }
+    .seg-opt {
+      padding: 7px 18px;
+      background: rgba(255,255,255,0.04);
+      color: #5a7a90;
+      font-size: 12px; font-family: sans-serif; font-weight: 700;
+      letter-spacing: 0.6px; text-transform: uppercase;
+      cursor: pointer; border: none; outline: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .seg-opt + .seg-opt { border-left: 1px solid rgba(255,255,255,0.1); }
+    .seg-opt.active { background: rgba(200,16,46,0.25); color: #e08090; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── XML escape ────────────────────────────────────────────────────────────
+    function esc(str) {
+      return (str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // ── Fixed header XML ──────────────────────────────────────────────────────
+    const FIXED_HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:p>
+    <w:pPr>
+      <w:tabs><w:tab w:val="right" w:pos="10080"/></w:tabs>
+      <w:spacing w:after="20"/>
+    </w:pPr>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:b/><w:bCs/>
+        <w:color w:val="C8102E"/>
+        <w:sz w:val="52"/><w:szCs w:val="52"/>
+      </w:rPr>
+      <w:t>CNA</w:t>
+    </w:r>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:tab/>
+    </w:r>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:color w:val="595959"/>
+      </w:rPr>
+      <w:t>Product Name&#182;</w:t>
+    </w:r>
+  </w:p>
+  <w:p>
+    <w:pPr>
+      <w:tabs><w:tab w:val="right" w:pos="10080"/></w:tabs>
+      <w:spacing w:after="80"/>
+    </w:pPr>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:tab/>
+    </w:r>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:i/><w:iCs/>
+        <w:color w:val="595959"/>
+      </w:rPr>
+      <w:t>Form Type</w:t>
+    </w:r>
+  </w:p>
+</w:hdr>`;
+
+    // Empty header/footer XML (when disabled)
+    const EMPTY_HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:p/>
+</w:hdr>`;
+
+    const EMPTY_FOOTER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:p/>
+</w:ftr>`;
+
+    // ── Footer XML ────────────────────────────────────────────────────────────
+    function buildFooterXml(formNumber, docType) {
+      const fn = esc(formNumber || "CNAB0333XX (10-2014)S");
+      const isRider = docType === "bond";
+      const effLabel  = isRider ? "Rider Effective Date"   : "Endorsement Effective Date";
+      const expLabel  = isRider ? "Rider Expiration Date"  : "Endorsement Expiration Date";
+      const noLabel   = isRider ? "Rider No."              : "Endorsement No.";
+      const pageLabel = isRider ? "Page 1 of N"            : "Page 1 of N";
+
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:p>
+    <w:pPr>
+      <w:pBdr><w:top w:val="single" w:sz="6" w:space="1" w:color="000000"/></w:pBdr>
+      <w:spacing w:after="40"/>
+    </w:pPr>
+  </w:p>
+  <w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="10080" w:type="dxa"/>
+      <w:tblBorders>
+        <w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+        <w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      </w:tblBorders>
+      <w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>
+      <w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/>
+    </w:tblPr>
+    <w:tblGrid><w:gridCol w:w="6480"/><w:gridCol w:w="3600"/></w:tblGrid>
+    <w:tr>
+      <w:tblPrEx>
+        <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar>
+      </w:tblPrEx>
+      <w:tc>
+        <w:tcPr>
+          <w:tcW w:w="6480" w:type="dxa"/>
+          <w:tcBorders>
+            <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+          </w:tcBorders>
+          <w:tcMar>
+            <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+            <w:bottom w:w="0" w:type="dxa"/><w:right w:w="80" w:type="dxa"/>
+          </w:tcMar>
+        </w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Form No. ${fn}</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr>
+            <w:tabs><w:tab w:val="left" w:pos="3240"/></w:tabs>
+            <w:spacing w:after="20"/>
+          </w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>${effLabel}: TEFFDAT</w:t>
+          </w:r>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:tab/><w:t>${expLabel}: TEXPDAT</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr>
+            <w:tabs><w:tab w:val="left" w:pos="3240"/></w:tabs>
+            <w:spacing w:after="20"/>
+          </w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>${noLabel}: ENDORNM</w:t>
+          </w:r>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:tab/><w:t>${pageLabel}</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Underwriting Company: UWCOMP, UWADDR1, UWADDR2, UWCITY, UWSTATE UWZIP</w:t>
+          </w:r>
+        </w:p>
+      </w:tc>
+      <w:tc>
+        <w:tcPr>
+          <w:tcW w:w="3600" w:type="dxa"/>
+          <w:tcBorders>
+            <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+          </w:tcBorders>
+          <w:tcMar>
+            <w:top w:w="0" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>
+            <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+          </w:tcMar>
+        </w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>${isRider ? "Bond" : "Policy"} No: POLSYM POLNUM</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>${isRider ? "Bond" : "Policy"} Effective Date: PEFFDAT</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>${isRider ? "Bond" : "Policy"} Page: x of y</w:t>
+          </w:r>
+        </w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:p>
+    <w:pPr><w:spacing w:before="40"/><w:jc w:val="center"/></w:pPr>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:t>&#169; Copyright CNA All Rights Reserved &#174;</w:t>
+    </w:r>
+  </w:p>
+</w:ftr>`;
+    }
+
+    // ── Dark grey banner ──────────────────────────────────────────────────────
+    function buildDarkBanner(line1, line2, line3) {
+      const lines = [line1, line2, line3].filter(l => l.trim());
+      const paras = lines.map((line, i) => `
+        <w:p>
+          <w:pPr><w:spacing w:after="${i < lines.length - 1 ? "20" : "0"}"/></w:pPr>
+          <w:r>
+            <w:rPr>
+              <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+              <w:b/><w:bCs/>
+              <w:color w:val="FFFFFF"/>
+            </w:rPr>
+            <w:t>${esc(line)}</w:t>
+          </w:r>
+        </w:p>`).join("");
+
+      return `<w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="10080" w:type="dxa"/>
+        <w:tblBorders>
+          <w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+          <w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+        </w:tblBorders>
+        <w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>
+        <w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/>
+      </w:tblPr>
+      <w:tblGrid><w:gridCol w:w="120"/><w:gridCol w:w="9960"/></w:tblGrid>
+      <w:tr>
+        <w:tblPrEx>
+          <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar>
+        </w:tblPrEx>
+        <w:tc>
+          <w:tcPr>
+            <w:tcW w:w="120" w:type="dxa"/>
+            <w:tcBorders>
+              <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            </w:tcBorders>
+            <w:shd w:val="clear" w:color="auto" w:fill="336699"/>
+            <w:tcMar>
+              <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+              <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+          </w:tcPr>
+          <w:p/>
+        </w:tc>
+        <w:tc>
+          <w:tcPr>
+            <w:tcW w:w="9960" w:type="dxa"/>
+            <w:tcBorders>
+              <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            </w:tcBorders>
+            <w:shd w:val="clear" w:color="auto" w:fill="999999"/>
+            <w:tcMar>
+              <w:top w:w="100" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+              <w:bottom w:w="100" w:type="dxa"/><w:right w:w="120" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+          </w:tcPr>
+          ${paras}
+        </w:tc>
+      </w:tr>
+    </w:tbl>`;
+    }
+
+    // ── Convert HTML from contentEditable into OOXML paragraphs ──────────────
+    function htmlToOoxmlParas(html) {
+      // Use a DOM parser to convert rich HTML → OOXML
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<body>${html}</body>`, "text/html");
+      const body = doc.body;
+      const paras = [];
+
+      function runXml(text, bold, italic, underline, strike, sup, sub, color) {
+        if (!text) return "";
+        let rpr = `<w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/><w:sz w:val="20"/><w:szCs w:val="20"/>`;
+        if (bold)      rpr += `<w:b/><w:bCs/>`;
+        if (italic)    rpr += `<w:i/><w:iCs/>`;
+        if (underline) rpr += `<w:u w:val="single"/>`;
+        if (strike)    rpr += `<w:strike/>`;
+        if (sup)       rpr += `<w:vertAlign w:val="superscript"/>`;
+        if (sub)       rpr += `<w:vertAlign w:val="subscript"/>`;
+        if (color && color !== "inherit") {
+          // convert CSS color to hex if needed
+          const hex = cssColorToHex(color);
+          if (hex) rpr += `<w:color w:val="${hex}"/>`;
+        }
+        return `<w:r><w:rPr>${rpr}</w:rPr><w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
+      }
+
+      function cssColorToHex(color) {
+        if (!color || color === "inherit" || color === "initial") return null;
+        if (/^#[0-9a-fA-F]{3,6}$/.test(color)) return color.replace("#","").padStart(6,"0");
+        const m = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (m) return [m[1],m[2],m[3]].map(n=>parseInt(n).toString(16).padStart(2,"0")).join("");
+        return null;
+      }
+
+      function nodeToRuns(node, bold, italic, underline, strike, sup, sub, color) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return runXml(node.textContent, bold, italic, underline, strike, sup, sub, color);
+        }
+        const tag = node.nodeName.toLowerCase();
+        const b2 = bold      || tag === "b" || tag === "strong";
+        const i2 = italic    || tag === "i" || tag === "em";
+        const u2 = underline || tag === "u";
+        const s2 = strike    || tag === "s" || tag === "strike" || tag === "del";
+        const sup2 = sup     || tag === "sup";
+        const sub2 = sub     || tag === "sub";
+        // inline color from style
+        let color2 = color;
+        if (node.style && node.style.color) color2 = node.style.color;
+        return Array.from(node.childNodes).map(c => nodeToRuns(c, b2, i2, u2, s2, sup2, sub2, color2)).join("");
+      }
+
+      function indentXml(indentLevel) {
+        if (!indentLevel) return "";
+        const twips = indentLevel * 720;
+        return `<w:ind w:left="${twips}"/>`;
+      }
+
+      function processPara(el, extraPPr) {
+        const runs = Array.from(el.childNodes).map(c => nodeToRuns(c, false, false, false, false, false, false, null)).join("");
+        if (!runs.trim() && !el.textContent.trim()) return "";
+        // detect text-align from style
+        let align = "left";
+        if (el.style && el.style.textAlign) {
+          const ta = el.style.textAlign;
+          if (ta === "center") align = "center";
+          else if (ta === "right") align = "right";
+          else if (ta === "justify") align = "both";
+        }
+        return `<w:p><w:pPr><w:spacing w:after="120"/><w:jc w:val="${align}"/>${extraPPr || ""}</w:pPr>${runs}</w:p>`;
+      }
+
+      function processListItem(el, tag, indent) {
+        const isOrdered = tag === "ol";
+        const numId = isOrdered ? "2" : "1";
+        const runs = Array.from(el.childNodes).map(c => nodeToRuns(c, false, false, false, false, false, false, null)).join("");
+        return `<w:p>
+          <w:pPr>
+            <w:numPr>
+              <w:ilvl w:val="${indent}"/>
+              <w:numId w:numId="${numId}"/>
+            </w:numPr>
+            <w:spacing w:after="60"/>
+          </w:pPr>
+          ${runs}
+        </w:p>`;
+      }
+
+      function processEl(el, listContext, depth) {
+        const tag = el.nodeName.toLowerCase();
+        if (tag === "p" || tag === "div") {
+          // check for indent via margin-left style
+          const ml = parseInt((el.style && el.style.marginLeft) || "0", 10) || 0;
+          const indLvl = Math.round(ml / 40); // 40px per level approx
+          const indXml = indLvl ? `<w:ind w:left="${indLvl * 720}"/>` : "";
+          const xml = processPara(el, indXml);
+          if (xml) paras.push(xml);
+        } else if (tag === "ul" || tag === "ol") {
+          Array.from(el.children).forEach(li => {
+            if (li.nodeName.toLowerCase() === "li") {
+              paras.push(processListItem(li, tag, depth || 0));
+              // handle nested lists inside li
+              Array.from(li.children).forEach(child => {
+                const ct = child.nodeName.toLowerCase();
+                if (ct === "ul" || ct === "ol") {
+                  Array.from(child.children).forEach(nli => {
+                    if (nli.nodeName.toLowerCase() === "li") {
+                      paras.push(processListItem(nli, ct, (depth || 0) + 1));
+                    }
+                  });
+                }
+              });
+            }
+          });
+        } else if (tag === "blockquote") {
+          Array.from(el.childNodes).forEach(child => processEl(child, listContext, depth));
+        } else if (tag === "br") {
+          paras.push(`<w:p><w:pPr><w:spacing w:after="60"/></w:pPr></w:p>`);
+        } else if (el.nodeType === Node.TEXT_NODE) {
+          const t = el.textContent.trim();
+          if (t) paras.push(`<w:p><w:pPr><w:spacing w:after="120"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r></w:p>`);
+        } else {
+          Array.from(el.childNodes).forEach(child => processEl(child, listContext, depth));
+        }
+      }
+
+      Array.from(body.childNodes).forEach(child => processEl(child, null, 0));
+      return paras.filter(Boolean).join("\n    ");
+    }
+
+    // ── FIXED_ALL_OTHER / FIXED_TEXTBOX (dynamic for bond/policy) ────────────
+    function buildFixedAllOther(docType) {
+      const isRider = docType === "bond";
+      const txt = isRider
+        ? "All other terms and conditions of the bond remain unchanged."
+        : "All other terms and conditions of the policy remain unchanged.";
+      return `<w:p>
+      <w:pPr><w:spacing w:after="120"/></w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+          <w:sz w:val="20"/><w:szCs w:val="20"/>
+        </w:rPr>
+        <w:t>${esc(txt)}</w:t>
+      </w:r>
+    </w:p>`;
+    }
+
+    function buildFixedTextbox(docType) {
+      const isRider = docType === "bond";
+      const txt = isRider
+        ? "This rider, which forms a part of and is for attachment to the bond issued by the designated Insurers, takes effect on the Bond Effective Date of said bond at the hour stated in said bond, unless another effective date (the Rider Effective Date) is shown below, and expires concurrently with said bond unless another expiration date is shown below."
+        : "This endorsement, which forms a part of and is for attachment to the policy issued by the designated Insurers, takes effect on the Policy Effective Date of said policy at the hour stated in said policy, unless another effective date (the Endorsement Effective Date) is shown below, and expires concurrently with said policy unless another expiration date is shown below.";
+      return `<w:p>
+      <w:pPr>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:left w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:bottom w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:right w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+        </w:pBdr>
+        <w:spacing w:before="80" w:after="80"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+          <w:sz w:val="20"/><w:szCs w:val="20"/>
+        </w:rPr>
+        <w:t xml:space="preserve">${esc(txt)}</w:t>
+      </w:r>
+    </w:p>`;
+    }
+
+    // ── Numbering XML for lists ───────────────────────────────────────────────
+    const NUMBERING_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="0">
+    <w:multiLevelType w:val="hybridMultilevel"/>
+    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#x2022;"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>
+    <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="o"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr></w:lvl>
+    <w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="&#x25AA;"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2160" w:hanging="360"/></w:pPr></w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="1">
+    <w:multiLevelType w:val="hybridMultilevel"/>
+    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>
+    <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr></w:lvl>
+    <w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%3."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="2160" w:hanging="360"/></w:pPr></w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+  <w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>
+</w:numbering>`;
+
+    // ── document.xml ─────────────────────────────────────────────────────────
+    function buildDocumentXml(line1, line2, line3, bodyHtml, includeHeader, includeFooter, docType) {
+      const paras = htmlToOoxmlParas(bodyHtml);
+      const hdrRef = includeHeader ? `<w:headerReference w:type="default" r:id="rId7"/>` : "";
+      const ftrRef = includeFooter ? `<w:footerReference w:type="default" r:id="rId8"/>` : "";
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:body>
+    ${buildDarkBanner(line1, line2, line3)}
+    <w:p><w:pPr><w:spacing w:after="120"/></w:pPr></w:p>
+    ${paras}
+    <w:p><w:pPr><w:spacing w:after="120"/></w:pPr></w:p>
+    ${buildFixedAllOther(docType)}
+    <w:p><w:pPr><w:spacing w:after="60"/></w:pPr></w:p>
+    ${buildFixedTextbox(docType)}
+    <w:sectPr>
+      ${hdrRef}
+      ${ftrRef}
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1080" w:right="1080" w:bottom="1440" w:left="1080" w:header="400" w:footer="720" w:gutter="0"/>
+      <w:cols w:space="720"/>
+      <w:docGrid w:linePitch="360"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+    }
+
+    // ── DOCX builder ─────────────────────────────────────────────────────────
+    async function buildDocx(line1, line2, line3, bodyHtml, formNumber, includeHeader, includeFooter, docType) {
+      const zip = new JSZip();
+
+      const contentTypeParts = [
+        `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`,
+        `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`,
+        `<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>`,
+        `<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>`,
+        `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>`,
+        includeHeader ? `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>` : "",
+        includeFooter ? `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` : "",
+      ].filter(Boolean).join("\n  ");
+
+      zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${contentTypeParts}
+</Types>`);
+
+      zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+      const relParts = [
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`,
+        `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`,
+        `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>`,
+        `<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`,
+        includeHeader ? `<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>` : "",
+        includeFooter ? `<Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>` : "",
+      ].filter(Boolean).join("\n  ");
+
+      zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${relParts}
+</Relationships>`);
+
+      zip.file("word/document.xml", buildDocumentXml(line1, line2, line3, bodyHtml, includeHeader, includeFooter, docType));
+      if (includeHeader) zip.file("word/header1.xml", FIXED_HEADER_XML);
+      if (includeFooter) zip.file("word/footer1.xml", buildFooterXml(formNumber, docType));
+      zip.file("word/numbering.xml", NUMBERING_XML);
+
+      zip.file("word/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+    </w:rPr></w:rPrDefault>
+  </w:docDefaults>
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:pPr><w:spacing w:after="120"/><w:jc w:val="left"/></w:pPr>
+    <w:rPr>
+      <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+    </w:rPr>
+  </w:style>
+  <w:style w:type="numbering" w:styleId="ListParagraph">
+    <w:name w:val="List Paragraph"/>
+    <w:pPr><w:ind w:left="720"/></w:pPr>
+  </w:style>
+</w:styles>`);
+
+      zip.file("word/settings.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:defaultTabStop w:val="720"/>
+</w:settings>`);
+
+      zip.file("word/fontTable.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:font w:name="Univers ATT"><w:charset w:val="00"/><w:family w:val="swiss"/><w:pitch w:val="variable"/></w:font>
+  <w:font w:name="Univers"><w:charset w:val="00"/><w:family w:val="swiss"/><w:pitch w:val="variable"/></w:font>
+</w:fonts>`);
+
+      return zip.generateAsync({
+        type: "blob",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+    }
+
+    // ── UI components ─────────────────────────────────────────────────────────
+    function Tag({ label, variant }) {
+      const isFixed = variant === "fixed";
+      return (
+        <span style={{
+          padding: "1px 8px", borderRadius: 20, fontSize: 10,
+          fontFamily: "sans-serif", letterSpacing: "0.5px",
+          background: isFixed ? "rgba(255,255,255,0.04)" : "rgba(200,16,46,0.14)",
+          border: `1px solid ${isFixed ? "rgba(255,255,255,0.08)" : "rgba(200,16,46,0.28)"}`,
+          color: isFixed ? "#304858" : "#c06070",
+        }}>{label}</span>
+      );
+    }
+
+    function GhostRow({ text }) {
+      return (
+        <div style={{
+          background: "rgba(255,255,255,0.025)",
+          border: "1px dashed rgba(255,255,255,0.08)",
+          borderRadius: 5, padding: "8px 11px",
+          color: "#2e4455", fontSize: 12,
+          fontFamily: "'Courier New', monospace",
+          fontStyle: "italic", marginBottom: 5,
+        }}>{text}</div>
+      );
+    }
+
+    function SectionHeading({ dot, label }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <div style={{ width: 3, height: 16, background: dot, borderRadius: 2 }} />
+          <span style={{ color: "#5a7a90", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase" }}>
+            {label}
+          </span>
+        </div>
+      );
+    }
+
+    function RowLabel({ label }) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+          <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>
+            {label}
+          </span>
+        </div>
+      );
+    }
+
+    // ── Toggle component ───────────────────────────────────────────────────────
+    function Toggle({ checked, onChange, label }) {
+      return (
+        <label className="toggle-wrap" onClick={() => onChange(!checked)}>
+          <div className={`toggle-track${checked ? " on" : ""}`}>
+            <div className="toggle-thumb" />
+          </div>
+          <span style={{ color: checked ? "#dce8f0" : "#3a5568", fontSize: 12, fontFamily: "sans-serif", transition: "color 0.2s" }}>
+            {label}
+          </span>
+        </label>
+      );
+    }
+
+    // ── Rich Text Editor ───────────────────────────────────────────────────────
+    function RichTextEditor({ onChange }) {
+      const editorRef = useRef(null);
+      const [activeFormats, setActiveFormats] = useState({});
+      const [showFindReplace, setShowFindReplace] = useState(false);
+      const [findText, setFindText] = useState("");
+      const [replaceText, setReplaceText] = useState("");
+      const [findMsg, setFindMsg] = useState("");
+      const [showTablePicker, setShowTablePicker] = useState(false);
+      const [tableHover, setTableHover] = useState({ r: 0, c: 0 });
+
+      const exec = (cmd, val) => {
+        editorRef.current.focus();
+        document.execCommand(cmd, false, val !== undefined ? val : null);
+        handleChange();
+        updateActiveFormats();
+      };
+
+      const handleChange = () => {
+        if (editorRef.current) onChange(editorRef.current.innerHTML);
+      };
+
+      const updateActiveFormats = () => {
+        try {
+          setActiveFormats({
+            bold: document.queryCommandState("bold"),
+            italic: document.queryCommandState("italic"),
+            underline: document.queryCommandState("underline"),
+            strikeThrough: document.queryCommandState("strikeThrough"),
+            superscript: document.queryCommandState("superscript"),
+            subscript: document.queryCommandState("subscript"),
+            insertUnorderedList: document.queryCommandState("insertUnorderedList"),
+            insertOrderedList: document.queryCommandState("insertOrderedList"),
+            justifyLeft: document.queryCommandState("justifyLeft"),
+            justifyCenter: document.queryCommandState("justifyCenter"),
+            justifyRight: document.queryCommandState("justifyRight"),
+            justifyFull: document.queryCommandState("justifyFull"),
+          });
+        } catch(e) {}
+      };
+
+      const handleIndent = (dir) => {
+        editorRef.current.focus();
+        document.execCommand(dir === "in" ? "indent" : "outdent", false, null);
+        handleChange();
+      };
+
+      const doFind = () => {
+        if (!findText) return;
+        editorRef.current.focus();
+        const found = window.find(findText, false, false, true);
+        setFindMsg(found ? "" : "Not found");
+      };
+
+      const doReplace = () => {
+        if (!findText) return;
+        editorRef.current.focus();
+        const sel = window.getSelection();
+        if (sel && sel.toString() === findText) {
+          document.execCommand("insertText", false, replaceText);
+          handleChange();
+          setFindMsg("Replaced 1 instance");
+        } else {
+          const found = window.find(findText, false, false, true);
+          if (found) setFindMsg("Press Replace again to replace");
+          else setFindMsg("Not found");
+        }
+      };
+
+      const doReplaceAll = () => {
+        if (!findText) return;
+        const html = editorRef.current.innerHTML;
+        const escaped = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const count = (html.match(new RegExp(escaped, 'gi')) || []).length;
+        if (count === 0) { setFindMsg("Not found"); return; }
+        editorRef.current.innerHTML = html.replace(new RegExp(escaped, 'gi'), replaceText);
+        handleChange();
+        setFindMsg(`Replaced ${count} instance(s)`);
+      };
+
+      const insertTable = (rows, cols) => {
+        editorRef.current.focus();
+        let tbl = '<table border="1" style="border-collapse:collapse;width:100%;margin:8px 0;">';
+        for (let r = 0; r < rows; r++) {
+          tbl += '<tr>';
+          for (let c = 0; c < cols; c++) {
+            tbl += `<td style="border:1px solid #888;padding:4px 8px;min-width:40px;">&nbsp;</td>`;
+          }
+          tbl += '</tr>';
+        }
+        tbl += '</table><p><br></p>';
+        document.execCommand('insertHTML', false, tbl);
+        handleChange();
+        setShowTablePicker(false);
+      };
+
+      const fontFamilies = ["Univers ATT","Arial","Times New Roman","Courier New","Georgia","Verdana","Calibri","Tahoma"];
+      const fontSizes = ["8","9","10","11","12","14","16","18","20","24","28","32","36","48","72"];
+
+      const btnStyle = (active) => ({
+        background: active ? "rgba(200,16,46,0.3)" : "rgba(255,255,255,0.06)",
+        border: `1px solid ${active ? "rgba(200,16,46,0.5)" : "rgba(255,255,255,0.1)"}`,
+        borderRadius: 4, color: active ? "#e08090" : "#8aacbe",
+        fontSize: 12, padding: "3px 7px", cursor: "pointer",
+        fontFamily: "sans-serif", fontWeight: 600, lineHeight: 1,
+        minWidth: 26, textAlign: "center", userSelect: "none",
+      });
+
+      const sepStyle = { width: 1, background: "rgba(255,255,255,0.1)", margin: "2px 4px", alignSelf: "stretch" };
+
+      const ToolRow = ({ children }) => (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 2, alignItems: "center", padding: "4px 6px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          {children}
+        </div>
+      );
+
+      return (
+        <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, overflow: "hidden" }}>
+          {/* ── Row 1: Font family, size, color, highlight, clear ── */}
+          <ToolRow>
+            <select className="rte-select" style={{ width: 130 }}
+              onChange={e => { exec("fontName", e.target.value); e.target.value = ""; }}
+              defaultValue="">
+              <option value="" disabled>Font Family</option>
+              {fontFamilies.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            <select className="rte-select" style={{ width: 54 }}
+              onChange={e => { exec("fontSize", e.target.value); e.target.value = ""; }}
+              defaultValue="">
+              <option value="" disabled>Sz</option>
+              {[1,2,3,4,5,6,7].map((v,i) => <option key={v} value={v}>{fontSizes[i+4]}</option>)}
+            </select>
+            <div style={sepStyle} />
+            <label title="Text Color" style={{ display:"flex", alignItems:"center", gap:3, cursor:"pointer" }}>
+              <span style={{ ...btnStyle(false), display:"flex", alignItems:"center", gap:3, padding:"3px 6px" }}>
+                <span style={{ fontSize:11 }}>A</span>
+                <input type="color" defaultValue="#dce8f0"
+                  onChange={e => exec("foreColor", e.target.value)}
+                  style={{ width:16, height:16, border:"none", background:"none", cursor:"pointer", padding:0 }} />
+              </span>
+            </label>
+            <label title="Highlight Color" style={{ display:"flex", alignItems:"center", gap:3, cursor:"pointer" }}>
+              <span style={{ ...btnStyle(false), display:"flex", alignItems:"center", gap:3, padding:"3px 6px" }}>
+                <span style={{ fontSize:11 }}>🖊</span>
+                <input type="color" defaultValue="#ffff00"
+                  onChange={e => exec("hiliteColor", e.target.value)}
+                  style={{ width:16, height:16, border:"none", background:"none", cursor:"pointer", padding:0 }} />
+              </span>
+            </label>
+            <div style={sepStyle} />
+            <button style={btnStyle(false)} title="Clear Formatting"
+              onMouseDown={e => { e.preventDefault(); exec("removeFormat"); }}>✕ Clear</button>
+          </ToolRow>
+
+          {/* ── Row 2: Bold, Italic, Underline, Strike, Super, Sub, Indent, Align, Lists ── */}
+          <ToolRow>
+            <button style={btnStyle(activeFormats.bold)} title="Bold (Ctrl+B)"
+              onMouseDown={e => { e.preventDefault(); exec("bold"); }}><b>B</b></button>
+            <button style={btnStyle(activeFormats.italic)} title="Italic (Ctrl+I)"
+              onMouseDown={e => { e.preventDefault(); exec("italic"); }}><i>I</i></button>
+            <button style={btnStyle(activeFormats.underline)} title="Underline (Ctrl+U)"
+              onMouseDown={e => { e.preventDefault(); exec("underline"); }}><u>U</u></button>
+            <button style={btnStyle(activeFormats.strikeThrough)} title="Strikethrough"
+              onMouseDown={e => { e.preventDefault(); exec("strikeThrough"); }}><s>S</s></button>
+            <button style={btnStyle(activeFormats.superscript)} title="Superscript"
+              onMouseDown={e => { e.preventDefault(); exec("superscript"); }}>x²</button>
+            <button style={btnStyle(activeFormats.subscript)} title="Subscript"
+              onMouseDown={e => { e.preventDefault(); exec("subscript"); }}>x₂</button>
+            <div style={sepStyle} />
+            <button style={btnStyle(activeFormats.justifyLeft)} title="Align Left"
+              onMouseDown={e => { e.preventDefault(); exec("justifyLeft"); }}>≡L</button>
+            <button style={btnStyle(activeFormats.justifyCenter)} title="Center"
+              onMouseDown={e => { e.preventDefault(); exec("justifyCenter"); }}>≡C</button>
+            <button style={btnStyle(activeFormats.justifyRight)} title="Align Right"
+              onMouseDown={e => { e.preventDefault(); exec("justifyRight"); }}>≡R</button>
+            <button style={btnStyle(activeFormats.justifyFull)} title="Justify"
+              onMouseDown={e => { e.preventDefault(); exec("justifyFull"); }}>≡J</button>
+            <div style={sepStyle} />
+            <button style={btnStyle(activeFormats.insertUnorderedList)} title="Bullet List"
+              onMouseDown={e => { e.preventDefault(); exec("insertUnorderedList"); }}>• List</button>
+            <button style={btnStyle(activeFormats.insertOrderedList)} title="Numbered List"
+              onMouseDown={e => { e.preventDefault(); exec("insertOrderedList"); }}>1. List</button>
+            <div style={sepStyle} />
+            <button style={btnStyle(false)} title="Increase Indent"
+              onMouseDown={e => { e.preventDefault(); handleIndent("in"); }}>→ In</button>
+            <button style={btnStyle(false)} title="Decrease Indent"
+              onMouseDown={e => { e.preventDefault(); handleIndent("out"); }}>← Out</button>
+            <div style={sepStyle} />
+            {/* Table picker */}
+            <div style={{ position:"relative" }}>
+              <button style={btnStyle(showTablePicker)} title="Insert Table"
+                onMouseDown={e => { e.preventDefault(); setShowTablePicker(p => !p); }}>⊞ Table</button>
+              {showTablePicker && (
+                <div style={{
+                  position:"absolute", top:"100%", left:0, zIndex:100, marginTop:4,
+                  background:"#0f1e2b", border:"1px solid rgba(255,255,255,0.15)",
+                  borderRadius:6, padding:8, boxShadow:"0 8px 24px rgba(0,0,0,0.5)"
+                }}>
+                  <div style={{ color:"#5a7a90", fontSize:10, marginBottom:6, fontFamily:"sans-serif" }}>
+                    {tableHover.r > 0 ? `${tableHover.r} × ${tableHover.c} table` : "Select table size"}
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(8, 20px)", gap:2 }}>
+                    {Array.from({length:8*8}, (_,i) => {
+                      const r = Math.floor(i/8)+1, c = (i%8)+1;
+                      const active = r <= tableHover.r && c <= tableHover.c;
+                      return (
+                        <div key={i}
+                          style={{ width:18, height:18, border:`1px solid ${active?"#336699":"rgba(255,255,255,0.1)"}`, background: active?"rgba(51,102,153,0.3)":"transparent", cursor:"pointer", borderRadius:1 }}
+                          onMouseEnter={() => setTableHover({r, c})}
+                          onMouseDown={e => { e.preventDefault(); insertTable(r, c); }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={sepStyle} />
+            <button style={btnStyle(showFindReplace)} title="Find & Replace"
+              onMouseDown={e => { e.preventDefault(); setShowFindReplace(p => !p); setFindMsg(""); }}>🔍 Find</button>
+            <div style={sepStyle} />
+            <button style={btnStyle(false)} title="Undo (Ctrl+Z)"
+              onMouseDown={e => { e.preventDefault(); exec("undo"); }}>↩ Undo</button>
+            <button style={btnStyle(false)} title="Redo (Ctrl+Y)"
+              onMouseDown={e => { e.preventDefault(); exec("redo"); }}>↪ Redo</button>
+          </ToolRow>
+
+          {/* ── Find & Replace Panel ── */}
+          {showFindReplace && (
+            <div style={{ padding:"10px 12px", background:"rgba(255,255,255,0.03)", borderBottom:"1px solid rgba(255,255,255,0.07)", display:"flex", flexWrap:"wrap", gap:8, alignItems:"center" }}>
+              <input
+                placeholder="Find…"
+                value={findText}
+                onChange={e => { setFindText(e.target.value); setFindMsg(""); }}
+                onKeyDown={e => e.key === "Enter" && doFind()}
+                style={{ width:160, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:4, padding:"5px 9px", color:"#dce8f0", fontSize:12, fontFamily:"sans-serif", outline:"none" }}
+              />
+              <input
+                placeholder="Replace with…"
+                value={replaceText}
+                onChange={e => setReplaceText(e.target.value)}
+                style={{ width:160, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:4, padding:"5px 9px", color:"#dce8f0", fontSize:12, fontFamily:"sans-serif", outline:"none" }}
+              />
+              <button style={{ ...btnStyle(false), padding:"5px 10px", fontSize:11 }} onMouseDown={e => { e.preventDefault(); doFind(); }}>Find Next</button>
+              <button style={{ ...btnStyle(false), padding:"5px 10px", fontSize:11 }} onMouseDown={e => { e.preventDefault(); doReplace(); }}>Replace</button>
+              <button style={{ ...btnStyle(false), padding:"5px 10px", fontSize:11 }} onMouseDown={e => { e.preventDefault(); doReplaceAll(); }}>Replace All</button>
+              {findMsg && <span style={{ color:"#a0c0d0", fontSize:11, fontFamily:"sans-serif" }}>{findMsg}</span>}
+            </div>
+          )}
+
+          {/* ── Editor Area ── */}
+          <div
+            ref={editorRef}
+            className="rte-editor"
+            contentEditable
+            suppressContentEditableWarning
+            onInput={handleChange}
+            onKeyUp={updateActiveFormats}
+            onMouseUp={updateActiveFormats}
+            onFocus={updateActiveFormats}
+            data-placeholder="Type body content here. Use the toolbar above for full Word-like editing."
+            style={{ position:"relative", borderRadius:0, borderTop:"none", minHeight:200 }}
+          />
+          <style>{`
+            .rte-editor:empty:before {
+              content: attr(data-placeholder);
+              color: #2e4060;
+              font-style: italic;
+              pointer-events: none;
+            }
+            .rte-editor table { border-collapse: collapse; width: 100%; }
+            .rte-editor td, .rte-editor th { border: 1px solid #555; padding: 4px 8px; min-width: 40px; }
+          `}</style>
+        </div>
+      );
+    }
+
+    // ── Main App ──────────────────────────────────────────────────────────────
+    function App() {
+      const [line1, setLine1] = useState("DIRECTORS AND OFFICERS EXCESS AND DIFFERENCE IN CONDITIONS ENDORSEMENT");
+      const [line2, setLine2] = useState("REFUSES TO INDEMNIFY");
+      const [line3, setLine3] = useState('(Recognizes Insureds Payments and "DIC within the DIC With Covered Removed")');
+      const [bodyHtml, setBodyHtml] = useState("");
+      const [formNumber, setFormNumber] = useState("CNAB0333XX (10-2014)S");
+      const [status, setStatus] = useState("idle");
+      const [errMsg, setErrMsg] = useState("");
+      const [downloadHref, setDownloadHref] = useState(null);
+      const [includeHeader, setIncludeHeader] = useState(true);
+      const [includeFooter, setIncludeFooter] = useState(true);
+      // "policy" | "bond"
+      const [docType, setDocType] = useState("policy");
+
+      const inputStyle = {
+        width: "100%", boxSizing: "border-box",
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: 5, padding: "9px 11px",
+        color: "#dce8f0", fontSize: 13,
+        fontFamily: "'Courier New', monospace",
+        outline: "none",
+      };
+
+      const generate = async () => {
+        const plainText = bodyHtml.replace(/<[^>]+>/g, "").trim();
+        if (!plainText) { setErrMsg("Body content is required."); setStatus("error"); return; }
+        setStatus("loading"); setErrMsg(""); setDownloadHref(null);
+        try {
+          const blob = await buildDocx(line1, line2, line3, bodyHtml, formNumber, includeHeader, includeFooter, docType);
+          const url = URL.createObjectURL(blob);
+          setDownloadHref(url);
+          setStatus("done");
+        } catch (e) { setErrMsg(e.message); setStatus("error"); }
+      };
+
+      const isRider = docType === "bond";
+
+      // Labels that change based on docType
+      const tailText = isRider
+        ? "All other terms and conditions of the bond remain unchanged."
+        : "All other terms and conditions of the policy remain unchanged.";
+      const boxText = isRider
+        ? '[Bordered box] "This rider, which forms a part of and is for attachment to the bond…"'
+        : '[Bordered box] "This endorsement, which forms a part of and is for attachment to the policy…"';
+
+      return (
+        <div style={{ minHeight: "100vh", background: "#0b151f", display: "flex", justifyContent: "center", padding: "36px 16px 60px" }}>
+          <div style={{ width: "100%", maxWidth: 660 }}>
+
+            {/* Title */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
+              <div style={{
+                background: "#C8102E", color: "#fff", fontFamily: "sans-serif",
+                fontWeight: 900, fontSize: 15, letterSpacing: -1,
+                width: 40, height: 40, borderRadius: 4, flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>CNA</div>
+              <div>
+                <div style={{ color: "#d0dce6", fontSize: 17, fontWeight: 700, fontFamily: "Georgia, serif" }}>
+                  {isRider ? "Rider Generator" : "Endorsement Generator"}
+                </div>
+                <div style={{ color: "#253545", fontSize: 10, fontFamily: "sans-serif", letterSpacing: "2px", textTransform: "uppercase", marginTop: 1 }}>Word Document Automation</div>
+              </div>
+            </div>
+
+            {/* ── Document Type (Policy / Bond) ── */}
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 3, height: 16, background: "#C8102E", borderRadius: 2 }} />
+                <span style={{ color: "#5a7a90", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase" }}>Document Type</span>
+              </div>
+              <div style={{ display: "flex", gap: 0 }}>
+                <div className="seg-ctrl">
+                  <button className={`seg-opt${docType === "policy" ? " active" : ""}`} onClick={() => { setDocType("policy"); setStatus("idle"); }}>Policy</button>
+                  <button className={`seg-opt${docType === "bond" ? " active" : ""}`} onClick={() => { setDocType("bond"); setStatus("idle"); }}>Bond</button>
+                </div>
+              </div>
+              {isRider && (
+                <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(200,16,46,0.07)", border: "1px solid rgba(200,16,46,0.18)", borderRadius: 5 }}>
+                  <span style={{ color: "#a05060", fontSize: 11, fontFamily: "sans-serif" }}>
+                    Bond mode: <strong style={{ color: "#c07080" }}>endorsement → rider</strong>, <strong style={{ color: "#c07080" }}>policy → bond</strong> throughout the document.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 24 }} />
+
+            {/* ── Header ── */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <SectionHeading dot="#253545" label="Header" />
+                <Toggle checked={includeHeader} onChange={v => { setIncludeHeader(v); setStatus("idle"); }} label={includeHeader ? "Included" : "Excluded"} />
+              </div>
+              <div style={{ opacity: includeHeader ? 1 : 0.3, transition: "opacity 0.2s", pointerEvents: includeHeader ? "auto" : "none" }}>
+                <GhostRow text="CNA  (red logo)" />
+                <GhostRow text="Product Name¶  ·  Form Type" />
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 24 }} />
+
+            {/* ── Body ── */}
+            <div style={{ marginBottom: 24 }}>
+              <SectionHeading dot="#C8102E" label="Body" />
+
+              {/* Dark grey banner */}
+              <div style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderLeft: "3px solid #555",
+                borderRadius: 6, padding: "14px 15px",
+                marginBottom: 18, background: "rgba(255,255,255,0.02)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
+                  <div style={{ width: 12, height: 12, background: "#404040", borderRadius: 2 }} />
+                  <span style={{ color: "#6a8898", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>Dark Grey Banner</span>
+                  <Tag label="editable" />
+                </div>
+                <div style={{ marginBottom: 9 }}>
+                  <RowLabel label="Line 1" />
+                  <input value={line1} onChange={e => { setLine1(e.target.value); setStatus("idle"); }} style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 9 }}>
+                  <RowLabel label="Line 2" />
+                  <input value={line2} onChange={e => { setLine2(e.target.value); setStatus("idle"); }} style={inputStyle} />
+                </div>
+                <div>
+                  <RowLabel label="Line 3" />
+                  <input value={line3} onChange={e => { setLine3(e.target.value); setStatus("idle"); }} style={inputStyle} />
+                </div>
+              </div>
+
+              {/* Rich text body content */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 9 }}>
+                  <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>Body Content</span>
+                  <Tag label="editable" />
+                  <span style={{ color: "#253545", fontSize: 11, fontFamily: "sans-serif", fontStyle: "italic" }}>Univers ATT · 10pt · left · 6pt after</span>
+                </div>
+                <RichTextEditor onChange={html => { setBodyHtml(html); setStatus("idle"); }} />
+              </div>
+
+              {/* Fixed tail */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ color: "#253545", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.3px", textTransform: "uppercase" }}>Always appended</span>
+                <Tag label="fixed" variant="fixed" />
+              </div>
+              <GhostRow text={tailText} />
+              <GhostRow text={boxText} />
+            </div>
+
+            <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 24 }} />
+
+            {/* ── Footer ── */}
+            <div style={{ marginBottom: 30 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <SectionHeading dot="#253545" label="Footer" />
+                <Toggle checked={includeFooter} onChange={v => { setIncludeFooter(v); setStatus("idle"); }} label={includeFooter ? "Included" : "Excluded"} />
+              </div>
+              <div style={{ opacity: includeFooter ? 1 : 0.3, transition: "opacity 0.2s", pointerEvents: includeFooter ? "auto" : "none" }}>
+                <div style={{ marginBottom: 9 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                    <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>Form Number</span>
+                    <Tag label="editable" />
+                  </div>
+                  <input value={formNumber} onChange={e => { setFormNumber(e.target.value); setStatus("idle"); }} style={inputStyle} />
+                </div>
+                <GhostRow text={`Eff. Date · Exp. Date · ${isRider ? "Rider" : "Endorsement"} No. · Underwriting Co. · ${isRider ? "Bond" : "Policy"} No. · © Copyright CNA  —  all fixed`} />
+              </div>
+            </div>
+
+            {/* ── Generate button ── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <button
+                  onClick={generate}
+                  disabled={status === "loading"}
+                  style={{
+                    background: status === "loading" ? "#182530" : "linear-gradient(135deg,#C8102E,#8c0b20)",
+                    color: status === "loading" ? "#2a3d4e" : "#fff",
+                    border: "none", borderRadius: 6,
+                    padding: "12px 26px",
+                    fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
+                    letterSpacing: "0.6px", textTransform: "uppercase",
+                    cursor: status === "loading" ? "not-allowed" : "pointer",
+                    boxShadow: status === "loading" ? "none" : "0 3px 14px rgba(200,16,46,0.3)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {status === "loading" ? "⏳  Generating…" : "⬇  Generate Word Document"}
+                </button>
+                {status === "error" && <span style={{ color: "#d05060", fontFamily: "sans-serif", fontSize: 12 }}>✗ {errMsg}</span>}
+              </div>
+
+              {status === "done" && downloadHref && (
+                <a
+                  href={downloadHref}
+                  download={`CNA_${isRider ? "Rider" : "Endorsement"}.docx`}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "rgba(94,200,122,0.12)",
+                    border: "1px solid rgba(94,200,122,0.35)",
+                    borderRadius: 6, padding: "11px 20px",
+                    color: "#5ec87a", fontFamily: "sans-serif",
+                    fontSize: 13, fontWeight: 700, textDecoration: "none",
+                    width: "fit-content",
+                  }}
+                >
+                  ⬇ Click here to download CNA_{isRider ? "Rider" : "Endorsement"}.docx
+                </a>
+              )}
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
