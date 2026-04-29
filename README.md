@@ -1,1 +1,659 @@
-# Document-generator
+import { useState, useEffect } from "react";
+
+function esc(str) {
+  return (str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const FIXED_HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:p>
+    <w:pPr>
+      <w:tabs><w:tab w:val="right" w:pos="10080"/></w:tabs>
+      <w:spacing w:after="20"/>
+    </w:pPr>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:b/><w:bCs/>
+        <w:color w:val="C8102E"/>
+        <w:sz w:val="52"/><w:szCs w:val="52"/>
+      </w:rPr>
+      <w:t>CNA</w:t>
+    </w:r>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:tab/>
+    </w:r>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:color w:val="595959"/>
+      </w:rPr>
+      <w:t>Product Name&#182;</w:t>
+    </w:r>
+  </w:p>
+  <w:p>
+    <w:pPr>
+      <w:tabs><w:tab w:val="right" w:pos="10080"/></w:tabs>
+      <w:spacing w:after="80"/>
+    </w:pPr>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:tab/>
+    </w:r>
+    <w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+        <w:i/><w:iCs/>
+        <w:color w:val="595959"/>
+      </w:rPr>
+      <w:t>Form Type</w:t>
+    </w:r>
+  </w:p>
+</w:hdr>`;
+
+function buildFooterXml(formNumber) {
+  const fn = esc(formNumber || "CNAB0333XX (10-2014)S");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:p>
+    <w:pPr>
+      <w:pBdr><w:top w:val="single" w:sz="6" w:space="1" w:color="000000"/></w:pBdr>
+      <w:spacing w:after="40"/>
+    </w:pPr>
+  </w:p>
+  <w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="10080" w:type="dxa"/>
+      <w:tblBorders>
+        <w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+        <w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      </w:tblBorders>
+      <w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>
+      <w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/>
+    </w:tblPr>
+    <w:tblGrid><w:gridCol w:w="6480"/><w:gridCol w:w="3600"/></w:tblGrid>
+    <w:tr>
+      <w:tblPrEx>
+        <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar>
+      </w:tblPrEx>
+      <w:tc>
+        <w:tcPr>
+          <w:tcW w:w="6480" w:type="dxa"/>
+          <w:tcBorders>
+            <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+          </w:tcBorders>
+          <w:tcMar>
+            <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+            <w:bottom w:w="0" w:type="dxa"/><w:right w:w="80" w:type="dxa"/>
+          </w:tcMar>
+        </w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Form No. ${fn}</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr>
+            <w:tabs><w:tab w:val="left" w:pos="3240"/></w:tabs>
+            <w:spacing w:after="20"/>
+          </w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Endorsement Effective Date: TEFFDAT</w:t>
+          </w:r>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:tab/><w:t>Endorsement Expiration Date: TEXPDAT</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr>
+            <w:tabs><w:tab w:val="left" w:pos="3240"/></w:tabs>
+            <w:spacing w:after="20"/>
+          </w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Endorsement No.: ENDORNM</w:t>
+          </w:r>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:tab/><w:t>Page 1 of N</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Underwriting Company: UWCOMP, UWADDR1, UWADDR2, UWCITY, UWSTATE UWZIP</w:t>
+          </w:r>
+        </w:p>
+      </w:tc>
+      <w:tc>
+        <w:tcPr>
+          <w:tcW w:w="3600" w:type="dxa"/>
+          <w:tcBorders>
+            <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+          </w:tcBorders>
+          <w:tcMar>
+            <w:top w:w="0" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>
+            <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+          </w:tcMar>
+        </w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Policy No: POLSYM POLNUM</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:after="20"/><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Policy Effective Date: PEFFDAT</w:t>
+          </w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:jc w:val="right"/></w:pPr>
+          <w:r>
+            <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+            <w:t>Policy Page: x of y</w:t>
+          </w:r>
+        </w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:p>
+    <w:pPr><w:spacing w:before="40"/><w:jc w:val="center"/></w:pPr>
+    <w:r>
+      <w:rPr><w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/></w:rPr>
+      <w:t>&#169; Copyright CNA All Rights Reserved &#174;</w:t>
+    </w:r>
+  </w:p>
+</w:ftr>`;
+}
+
+function buildDarkBanner(line1, line2, line3) {
+  const lines = [line1, line2, line3].filter(l => l.trim());
+  const paras = lines.map((line, i) => `
+        <w:p>
+          <w:pPr><w:spacing w:after="${i < lines.length - 1 ? "20" : "0"}"/></w:pPr>
+          <w:r>
+            <w:rPr>
+              <w:rFonts w:ascii="Univers" w:eastAsia="Univers" w:hAnsi="Univers" w:cs="Univers"/>
+              <w:b/><w:bCs/>
+              <w:color w:val="FFFFFF"/>
+            </w:rPr>
+            <w:t>${esc(line)}</w:t>
+          </w:r>
+        </w:p>`).join("");
+
+  return `<w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="10080" w:type="dxa"/>
+        <w:tblBorders>
+          <w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+          <w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+        </w:tblBorders>
+        <w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar>
+        <w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/>
+      </w:tblPr>
+      <w:tblGrid><w:gridCol w:w="120"/><w:gridCol w:w="9960"/></w:tblGrid>
+      <w:tr>
+        <w:tblPrEx>
+          <w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar>
+        </w:tblPrEx>
+        <w:tc>
+          <w:tcPr>
+            <w:tcW w:w="120" w:type="dxa"/>
+            <w:tcBorders>
+              <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            </w:tcBorders>
+            <w:shd w:val="clear" w:color="auto" w:fill="0057A8"/>
+            <w:tcMar>
+              <w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/>
+              <w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+          </w:tcPr>
+          <w:p/>
+        </w:tc>
+        <w:tc>
+          <w:tcPr>
+            <w:tcW w:w="9960" w:type="dxa"/>
+            <w:tcBorders>
+              <w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+              <w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/>
+            </w:tcBorders>
+            <w:shd w:val="clear" w:color="auto" w:fill="404040"/>
+            <w:tcMar>
+              <w:top w:w="100" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>
+              <w:bottom w:w="100" w:type="dxa"/><w:right w:w="120" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+          </w:tcPr>
+          ${paras}
+        </w:tc>
+      </w:tr>
+    </w:tbl>`;
+}
+
+function buildBodyPara(text) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return `<w:p>
+      <w:pPr>
+        <w:spacing w:after="120"/>
+        <w:jc w:val="left"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+          <w:sz w:val="20"/><w:szCs w:val="20"/>
+        </w:rPr>
+        <w:t xml:space="preserve">${esc(t)}</w:t>
+      </w:r>
+    </w:p>`;
+}
+
+const FIXED_ALL_OTHER = `<w:p>
+      <w:pPr><w:spacing w:after="120"/></w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+          <w:sz w:val="20"/><w:szCs w:val="20"/>
+        </w:rPr>
+        <w:t>All other terms and conditions of the policy remain unchanged.</w:t>
+      </w:r>
+    </w:p>`;
+
+const FIXED_TEXTBOX = `<w:p>
+      <w:pPr>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:left w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:bottom w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+          <w:right w:val="single" w:sz="6" w:space="4" w:color="000000"/>
+        </w:pBdr>
+        <w:spacing w:before="80" w:after="80"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+          <w:sz w:val="20"/><w:szCs w:val="20"/>
+        </w:rPr>
+        <w:t xml:space="preserve">This endorsement, which forms a part of and is for attachment to the policy issued by the designated Insurers, takes effect on the Policy Effective Date of said policy at the hour stated in said policy, unless another effective date (the Endorsement Effective Date) is shown below, and expires concurrently with said policy unless another expiration date is shown below.</w:t>
+      </w:r>
+    </w:p>`;
+
+function buildDocumentXml(line1, line2, line3, bodyText) {
+  const paras = bodyText.split("\n").map(buildBodyPara).filter(Boolean).join("\n    ");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  mc:Ignorable="w14">
+  <w:body>
+    ${buildDarkBanner(line1, line2, line3)}
+    <w:p><w:pPr><w:spacing w:after="120"/></w:pPr></w:p>
+    ${paras}
+    <w:p><w:pPr><w:spacing w:after="120"/></w:pPr></w:p>
+    ${FIXED_ALL_OTHER}
+    <w:p><w:pPr><w:spacing w:after="60"/></w:pPr></w:p>
+    ${FIXED_TEXTBOX}
+    <w:sectPr>
+      <w:headerReference w:type="default" r:id="rId7"/>
+      <w:footerReference w:type="default" r:id="rId8"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1080" w:right="1080" w:bottom="1440" w:left="1080" w:header="400" w:footer="720" w:gutter="0"/>
+      <w:cols w:space="720"/>
+      <w:docGrid w:linePitch="360"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`;
+}
+
+async function loadJSZip() {
+  if (window.JSZip) return window.JSZip;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload = () => resolve(window.JSZip);
+    s.onerror = () => reject(new Error("Failed to load JSZip"));
+    document.head.appendChild(s);
+  });
+}
+
+async function buildDocx(line1, line2, line3, bodyText, formNumber) {
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
+  <Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>
+</Types>`);
+
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>
+  <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>
+  <Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>
+</Relationships>`);
+
+  zip.file("word/document.xml", buildDocumentXml(line1, line2, line3, bodyText));
+  zip.file("word/header1.xml", FIXED_HEADER_XML);
+  zip.file("word/footer1.xml", buildFooterXml(formNumber));
+
+  zip.file("word/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+    </w:rPr></w:rPrDefault>
+  </w:docDefaults>
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:pPr><w:spacing w:after="120"/><w:jc w:val="left"/></w:pPr>
+    <w:rPr>
+      <w:rFonts w:ascii="Univers ATT" w:eastAsia="Univers ATT" w:hAnsi="Univers ATT" w:cs="Univers ATT"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+    </w:rPr>
+  </w:style>
+</w:styles>`);
+
+  zip.file("word/settings.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:defaultTabStop w:val="720"/>
+</w:settings>`);
+
+  zip.file("word/fontTable.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:fonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:font w:name="Univers ATT"><w:charset w:val="00"/><w:family w:val="swiss"/><w:pitch w:val="variable"/></w:font>
+  <w:font w:name="Univers"><w:charset w:val="00"/><w:family w:val="swiss"/><w:pitch w:val="variable"/></w:font>
+</w:fonts>`);
+
+  return zip.generateAsync({
+    type: "blob",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+}
+
+const S = {
+  input: {
+    width: "100%", boxSizing: "border-box",
+    background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 5, padding: "9px 11px",
+    color: "#dce8f0", fontSize: 13,
+    fontFamily: "'Courier New', monospace",
+    outline: "none",
+  },
+};
+
+function Tag({ label, variant }) {
+  const isFixed = variant === "fixed";
+  return (
+    <span style={{
+      padding: "1px 8px", borderRadius: 20, fontSize: 10,
+      fontFamily: "sans-serif", letterSpacing: "0.5px",
+      background: isFixed ? "rgba(255,255,255,0.04)" : "rgba(200,16,46,0.14)",
+      border: `1px solid ${isFixed ? "rgba(255,255,255,0.08)" : "rgba(200,16,46,0.28)"}`,
+      color: isFixed ? "#304858" : "#c06070",
+    }}>{label}</span>
+  );
+}
+
+function RowLabel({ label, tag }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+      <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>
+        {label}
+      </span>
+      {tag && <Tag label={tag} variant={tag === "fixed" ? "fixed" : "edit"} />}
+    </div>
+  );
+}
+
+function GhostRow({ text }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.025)",
+      border: "1px dashed rgba(255,255,255,0.08)",
+      borderRadius: 5, padding: "8px 11px",
+      color: "#2e4455", fontSize: 12,
+      fontFamily: "'Courier New', monospace",
+      fontStyle: "italic", marginBottom: 5,
+    }}>{text}</div>
+  );
+}
+
+function SectionHeading({ dot, label }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <div style={{ width: 3, height: 16, background: dot, borderRadius: 2 }} />
+      <span style={{ color: "#5a7a90", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase" }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+export default function App() {
+  const [line1, setLine1] = useState("DIRECTORS AND OFFICERS EXCESS AND DIFFERENCE IN CONDITIONS ENDORSEMENT");
+  const [line2, setLine2] = useState("REFUSES TO INDEMNIFY");
+  const [line3, setLine3] = useState(`(Recognizes Insureds Payments and "DIC within the DIC With Covered Removed")`);
+  const [bodyText, setBodyText] = useState("");
+  const [formNumber, setFormNumber] = useState("CNAB0333XX (10-2014)S");
+  const [status, setStatus] = useState("idle");
+  const [errMsg, setErrMsg] = useState("");
+  const [downloadHref, setDownloadHref] = useState(null);
+
+  useEffect(() => { loadJSZip().catch(() => {}); }, []);
+
+  const paraCount = bodyText.split("\n").filter(l => l.trim()).length;
+
+  const generate = async () => {
+    if (!bodyText.trim()) { setErrMsg("Body content is required."); setStatus("error"); return; }
+    setStatus("loading"); setErrMsg(""); setDownloadHref(null);
+    try {
+      const blob = await buildDocx(line1, line2, line3, bodyText, formNumber);
+      const reader = new FileReader();
+      reader.onload = () => { setDownloadHref(reader.result); setStatus("done"); };
+      reader.onerror = () => { setErrMsg("Failed to encode file."); setStatus("error"); };
+      reader.readAsDataURL(blob);
+    } catch (e) { setErrMsg(e.message); setStatus("error"); }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0b151f", display: "flex", justifyContent: "center", padding: "36px 16px 60px" }}>
+      <div style={{ width: "100%", maxWidth: 660 }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
+          <div style={{
+            background: "#C8102E", color: "#fff", fontFamily: "sans-serif",
+            fontWeight: 900, fontSize: 15, letterSpacing: -1,
+            width: 40, height: 40, borderRadius: 4, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>CNA</div>
+          <div>
+            <div style={{ color: "#d0dce6", fontSize: 17, fontWeight: 700, fontFamily: "Georgia, serif" }}>Endorsement Generator</div>
+            <div style={{ color: "#253545", fontSize: 10, fontFamily: "sans-serif", letterSpacing: "2px", textTransform: "uppercase", marginTop: 1 }}>Word Document Automation</div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <SectionHeading dot="#253545" label="Header — fixed" />
+          <GhostRow text="CNA  (red logo)" />
+          <GhostRow text="Product Name¶  ·  Form Type" />
+        </div>
+
+        <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 24 }} />
+
+        <div style={{ marginBottom: 24 }}>
+          <SectionHeading dot="#C8102E" label="Body" />
+
+          <div style={{
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderLeft: "3px solid #555",
+            borderRadius: 6,
+            padding: "14px 15px",
+            marginBottom: 18,
+            background: "rgba(255,255,255,0.02)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 13 }}>
+              <div style={{ width: 12, height: 12, background: "#404040", borderRadius: 2 }} />
+              <span style={{ color: "#6a8898", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>
+                Dark Grey Banner
+              </span>
+              <Tag label="editable" />
+            </div>
+
+            <div style={{ marginBottom: 9 }}>
+              <RowLabel label="Line 1" />
+              <input value={line1} onChange={e => { setLine1(e.target.value); setStatus("idle"); }} style={S.input} />
+            </div>
+            <div style={{ marginBottom: 9 }}>
+              <RowLabel label="Line 2" />
+              <input value={line2} onChange={e => { setLine2(e.target.value); setStatus("idle"); }} style={S.input} />
+            </div>
+            <div>
+              <RowLabel label="Line 3" />
+              <input value={line3} onChange={e => { setLine3(e.target.value); setStatus("idle"); }} style={S.input} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7 }}>
+              <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>
+                Body Content
+              </span>
+              <Tag label="editable" />
+              <span style={{ color: "#253545", fontSize: 11, fontFamily: "sans-serif", fontStyle: "italic" }}>
+                Univers ATT · 10pt · left · 6pt after
+              </span>
+            </div>
+            <div style={{ position: "relative" }}>
+              <textarea
+                rows={9}
+                placeholder={"One paragraph per line.\n\nExample:\nIn consideration of the premium charged, it is understood and agreed as follows:\nSection I. FOLLOW FORM EXCESS COVERAGE is deleted in its entirety and replaced as follows:\nThe Insurer shall provide coverage in accordance with all of the terms..."}
+                value={bodyText}
+                onChange={e => { setBodyText(e.target.value); setStatus("idle"); }}
+                style={{ ...S.input, resize: "vertical", lineHeight: 1.6 }}
+              />
+              <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "#243545", fontFamily: "sans-serif" }}>
+                {paraCount} para{paraCount !== 1 ? "s" : ""}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ color: "#253545", fontSize: 10, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.3px", textTransform: "uppercase" }}>
+              Always appended
+            </span>
+            <Tag label="fixed" variant="fixed" />
+          </div>
+          <GhostRow text="All other terms and conditions of the policy remain unchanged." />
+          <GhostRow text='[Bordered box] "This endorsement, which forms a part of and is for attachment to the policy…"' />
+        </div>
+
+        <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 24 }} />
+
+        <div style={{ marginBottom: 30 }}>
+          <SectionHeading dot="#253545" label="Footer" />
+          <div style={{ marginBottom: 9 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+              <span style={{ color: "#7090a8", fontSize: 11, fontFamily: "sans-serif", fontWeight: 700, letterSpacing: "1.1px", textTransform: "uppercase" }}>Form Number</span>
+              <Tag label="editable" />
+            </div>
+            <input value={formNumber} onChange={e => { setFormNumber(e.target.value); setStatus("idle"); }} style={S.input} />
+          </div>
+          <GhostRow text="Eff. Date · Exp. Date · Endorsement No. · Underwriting Co. · Policy No. · © Copyright CNA  —  all fixed" />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button
+              onClick={generate}
+              disabled={status === "loading"}
+              style={{
+                background: status === "loading" ? "#182530" : "linear-gradient(135deg,#C8102E,#8c0b20)",
+                color: status === "loading" ? "#2a3d4e" : "#fff",
+                border: "none", borderRadius: 6,
+                padding: "12px 26px",
+                fontSize: 13, fontFamily: "sans-serif", fontWeight: 700,
+                letterSpacing: "0.6px", textTransform: "uppercase",
+                cursor: status === "loading" ? "not-allowed" : "pointer",
+                boxShadow: status === "loading" ? "none" : "0 3px 14px rgba(200,16,46,0.3)",
+                transition: "all 0.15s",
+              }}
+            >
+              {status === "loading" ? "⏳  Generating…" : "⬇  Generate Word Document"}
+            </button>
+            {status === "error" && <span style={{ color: "#d05060", fontFamily: "sans-serif", fontSize: 12 }}>✗ {errMsg}</span>}
+          </div>
+
+          {status === "done" && downloadHref && (
+            <a
+              href={downloadHref}
+              download="CNA_Endorsement.docx"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                background: "rgba(94,200,122,0.12)",
+                border: "1px solid rgba(94,200,122,0.35)",
+                borderRadius: 6, padding: "11px 20px",
+                color: "#5ec87a", fontFamily: "sans-serif",
+                fontSize: 13, fontWeight: 700, textDecoration: "none",
+                width: "fit-content",
+              }}
+            >
+              ⬇ Click here to download CNA_Endorsement.docx
+            </a>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
